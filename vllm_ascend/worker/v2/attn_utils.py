@@ -250,8 +250,7 @@ def build_attn_metadata(
 
         for attn_group in attn_groups[i]:
             attn_metadata_builder = attn_group.get_metadata_builder(0)
-            is_dsa_builder = isinstance(attn_metadata_builder, AscendDSAMetadataBuilder)
-            if for_cudagraph_capture and not is_dsa_builder:
+            if for_cudagraph_capture:
                 metadata = attn_metadata_builder.build_for_cudagraph_capture(common_attn_metadata)
             else:
                 attn_metadata_extra_kwargs = (
