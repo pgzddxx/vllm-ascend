@@ -33,6 +33,15 @@ def _inputs(tokens, dim, dtype, strided, device):
 
 
 def _inverse_rotate(hidden, rotation):
+    if rotation.ndim == 3:
+        return (
+            torch.matmul(
+                hidden.float().unflatten(-1, (rotation.shape[0], 32)).unsqueeze(-2),
+                rotation.transpose(-1, -2),
+            )
+            .squeeze(-2)
+            .flatten(-2)
+        )
     return (hidden.float().unflatten(-1, (-1, 32)) @ rotation.T).flatten(-2)
 
 
@@ -109,23 +118,35 @@ def test_engram_gate_replay_reads_updated_inputs():
 
 @pytest.mark.skipif(INTERPRET, reason="Dispatch coverage requires real NPU tensors")
 @pytest.mark.parametrize(
-    "hardware,rotated,expected_call",
+    "hardware,rotated,layout,expected_call",
     [
-        ("A3", True, "fused_engram_gate_a3"),
-        ("A5", False, "fused_engram_gate"),
-        ("A3", False, "engram_gate"),
-        ("A5", True, "engram_gate"),
-        ("A2", True, "engram_gate"),
-        ("A2", False, "engram_gate"),
+        ("A3", True, "contiguous", "fused_engram_gate_a3"),
+        ("A5", False, "contiguous", "fused_engram_gate"),
+        ("A3", False, "contiguous", "engram_gate"),
+        ("A5", True, "contiguous", "engram_gate"),
+        ("A2", True, "contiguous", "engram_gate"),
+        ("A2", False, "contiguous", "engram_gate"),
+        ("A3", True, "block_table", "engram_gate"),
+        ("A3", True, "hidden_channels", "engram_gate"),
+        ("A3", True, "kv_channels", "engram_gate"),
     ],
 )
 @torch.inference_mode()
-def test_engram_gate_dispatch_preserves_hardware_paths(monkeypatch, hardware, rotated, expected_call):
+def test_engram_gate_dispatch_preserves_hardware_paths(monkeypatch, hardware, rotated, layout, expected_call):
     from vllm_ascend.device.hardware import AscendDeviceType
     from vllm_ascend.device.hardware_profile import get_hardware_profile
     from vllm_ascend.models.deepseek_v41.engram import layer as layer_module
 
     hidden, kv, q, k, mask, rotation = _inputs(2, 96, torch.bfloat16, False, "npu")
+    if layout == "block_table":
+        rotation = torch.stack((rotation, rotation.T, -rotation))
+    elif layout == "hidden_channels":
+        hidden = torch.stack((hidden, hidden), dim=-1)[..., 0]
+    elif layout == "kv_channels":
+        kv = torch.stack((kv, kv), dim=-1)[..., 0]
+    if layout != "contiguous":
+        with pytest.raises(ValueError):
+            fused_engram_gate_a3(hidden, kv, q, k, rotation, mask, 1e-6)
     layer = object.__new__(layer_module.AscendEngram)
     torch.nn.Module.__init__(layer)
     # Supply an already projected tensor so this test exercises gate dispatch

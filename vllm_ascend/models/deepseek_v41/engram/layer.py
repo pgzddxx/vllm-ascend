@@ -48,7 +48,15 @@ class AscendEngram(nn.Module):
             profile = get_current_hardware_profile()
             if rotation is None and profile.supports(HardwareCapability.ENGRAM_UNROTATED_GATE):
                 return fused_engram_gate(hidden_states, kv, self.q_weight, self.k_weight, token_mask, self.eps)
-            if rotation is not None and profile.supports(HardwareCapability.ENGRAM_ROTATED_GATE):
+            # The A3 kernel supports a shared 2D rotation block and contiguous
+            # channels. Preserve the unfused path for other supported layouts.
+            if (
+                rotation is not None
+                and profile.supports(HardwareCapability.ENGRAM_ROTATED_GATE)
+                and rotation.ndim == 2
+                and hidden_states.stride(-1) == 1
+                and kv.stride(-1) == 1
+            ):
                 return fused_engram_gate_a3(
                     hidden_states, kv, self.q_weight, self.k_weight, rotation, token_mask, self.eps
                 )

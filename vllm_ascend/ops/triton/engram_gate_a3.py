@@ -78,6 +78,10 @@ def fused_engram_gate_a3(hidden, kv, q_weight, k_weight, rotation, token_mask, e
     ``kv`` has HC keys plus one value per row; retain its full row stride.
     The value projection already includes the checkpoint's forward rotation.
     """
+    if hidden.stride(-1) != 1 or kv.stride(-1) != 1:
+        raise ValueError("A3 fused Engram gate requires contiguous hidden/key channels")
+    if rotation.ndim != 2:
+        raise ValueError("A3 fused Engram gate requires a shared 2D rotation block")
     tokens, branches, dim = hidden.shape
     original = (hidden.float().unflatten(-1, (-1, rotation.shape[0])) @ rotation.float().T).flatten(-2)
     output = torch.empty(hidden.shape, dtype=hidden.dtype, device=hidden.device)
