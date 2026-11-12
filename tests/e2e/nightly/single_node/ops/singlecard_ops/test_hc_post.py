@@ -4,6 +4,8 @@ import pytest
 import torch
 import torch_npu
 
+from vllm_ascend.device.device_config import get_ascend_device_type
+from vllm_ascend.device.hardware import AscendDeviceType
 from vllm_ascend.utils import bootstrap_custom_op_env, enable_custom_op
 
 bootstrap_custom_op_env()
@@ -28,6 +30,9 @@ enable_custom_op()
 )
 def test_npu_hc_post_matches_ordered_fp32_reference(batch, sequence, heads, hidden_size, dtype, mix_dtype):
     """Fixed and runtime head counts must preserve FP32 accumulation across D tiles."""
+    if heads != 4 and get_ascend_device_type() == AscendDeviceType.A5:
+        pytest.skip("A5 hc_post regbase kernel requires exactly four heads")
+
     torch.manual_seed(1024)
     x = torch.randn(batch, sequence, hidden_size, dtype=dtype)
     residual = torch.randn(batch, sequence, heads, hidden_size, dtype=dtype)

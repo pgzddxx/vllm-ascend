@@ -1,0 +1,5 @@
+pr: 4
+entries:
+  - category: performance
+    text: Improved A3 HC pre and HC post operator performance by reducing redundant tiling and data movement, reusing batch coefficients across D tiles, and handling aligned pre-mix and tail-D layouts.
+    hardware: [A3]
