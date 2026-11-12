@@ -1,0 +1,16 @@
+pr: 7
+entries:
+  - category: performance
+    text: >-
+      Added the QLI/QSLI native optimization port for A3 DeepSeek V4.1
+      validation. End-to-end performance gains depend on workload and
+      require validation on the integrated branch.
+    model: deepseek-v4.1
+    hardware: [A3]
+  - category: breaking
+    text: >-
+      npu_quant_lightning_indexer_v3 now accepts optional candidate_block_length
+      and returns four tensors including candidate lengths. Update external
+      three-output callers and rebuild the native extension and custom operators.
+    model: deepseek-v4.1
+    hardware: [A3]
