@@ -1466,6 +1466,7 @@ at::Tensor npu_quant_lightning_indexer_v2_metadata_npu(
     auto seqused_k_val = get_valid_tensor(seqused_k, output_device);
     auto cmp_residual_k_val = get_valid_tensor(cmp_residual_k, output_device);
     auto causal_seqlens_kv_global_val = get_valid_tensor(causal_seqlens_kv_global, output_device);
+    auto candidate_block_length_val = get_valid_tensor(c10::nullopt, output_device);
 
     std::string layout_q_str = std::string(layout_q);
     char *layout_q_ptr = const_cast<char *>(layout_q_str.c_str());
@@ -1474,7 +1475,7 @@ at::Tensor npu_quant_lightning_indexer_v2_metadata_npu(
 
     EXEC_NPU_CMD(aclnnVllmAscendQuantLightningIndexerV2Metadata,
                  cu_seqlens_q_val, cu_seqlens_k_val, seqused_q_val, seqused_k_val, cmp_residual_k_val,
-                 causal_seqlens_kv_global_val, num_heads_q, num_heads_k, head_dim, topk, quant_mode, batch_size,
+                 causal_seqlens_kv_global_val, candidate_block_length_val, num_heads_q, num_heads_k, head_dim, topk, quant_mode, batch_size,
                  max_seqlen_q, max_seqlen_k, layout_q_ptr, layout_k_ptr, mask_mode, cmp_ratio, enable_dcp, cp_world,
                  cp_rank, cp_kv_cache_interleave_size, output);
 
@@ -3129,8 +3130,8 @@ TORCH_LIBRARY_EXPAND(CONCAT(_C, _ascend), ops)
         "int max_seqlen_q=-1, str layout_q='TND', str layout_k='PA_BBND', int mask_mode=3, "
         "int cmp_ratio=1, int candidate_mode=3, int candidate_topk_blocks=2048, "
         "int candidate_block_size=8, bool enable_dcp=False, int cp_world=1, int cp_rank=0, "
-        "int cp_kv_cache_interleave_size=1, Tensor? causal_seqlens_kv_global=None, int return_value=0)"
-        " -> (Tensor, Tensor, Tensor)"
+        "int cp_kv_cache_interleave_size=1, Tensor? causal_seqlens_kv_global=None, int return_value=0, Tensor? candidate_block_length=None)"
+        " -> (Tensor, Tensor, Tensor, Tensor)"
     );
     ops.impl("npu_quant_lightning_indexer_v3", torch::kPrivateUse1,
              &vllm_ascend::qli_v2::QuantLightningIndexerCandidate);
