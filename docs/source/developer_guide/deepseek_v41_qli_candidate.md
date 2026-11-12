@@ -1,5 +1,8 @@
 # DeepSeek V4.1 QLI V2 and candidate integration
 
+For the subsequent PR #21394 A3 port, four-output ABI, build instructions
+and validation limits, see [QLI optimization on A3](deepseek_v41_qli_optimization.md).
+
 DeepSeek V4.1's indexer uses `QuantLightningIndexerV2` with paged INT8 index K.
 The imported operator source is from `ops-transformer-qli_candidate.zip`,
 SHA256 `771f0c16b9119c676c10cebef713b168f127ff194f3f2f98edcbcd0979c6f966`.

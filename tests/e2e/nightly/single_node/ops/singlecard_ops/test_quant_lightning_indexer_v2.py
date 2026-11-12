@@ -313,7 +313,7 @@ def test_candidate_consumer_preserves_each_query_mask(ratio, query_count):
         device=str(query.device),
         **common,
     )
-    selected, _, _ = torch.ops._C_ascend.npu_quant_lightning_indexer_v3(
+    selected, _, _, _ = torch.ops._C_ascend.npu_quant_lightning_indexer_v3(
         query,
         key,
         weights,
@@ -379,7 +379,7 @@ def test_qli_candidate_vector_repeats(queries, context, ratio, mode, topk):
     metadata = torch.ops._C_ascend.npu_quant_lightning_indexer_v2_metadata(
         heads, 1, width, topk, 2, batch_size=1, max_seqlen_k=context, device="npu:0", **common
     )
-    selected, _, candidate_output = torch.ops._C_ascend.npu_quant_lightning_indexer_v3(
+    selected, _, candidate_output, candidate_lengths = torch.ops._C_ascend.npu_quant_lightning_indexer_v3(
         query_cpu.npu(),
         key,
         weights_cpu.npu(),
@@ -400,6 +400,13 @@ def test_qli_candidate_vector_repeats(queries, context, ratio, mode, topk):
     scores = (relu * (weights_cpu * query_scale_cpu).float().unsqueeze(-1)).sum(1)
     scores *= key_scale_cpu.reshape(context).float()
     selected = selected.cpu().reshape(queries, topk).long()
+    assert candidate_lengths.dtype == torch.int32
+    if mode == 1:
+        assert candidate_lengths.shape == (queries, 1)
+        candidate_lengths = candidate_lengths.cpu().reshape(queries)
+    else:
+        assert candidate_output.shape == (0,)
+        assert candidate_lengths.shape == (0,)
     for row in range(queries):
         visible = (context * ratio - queries + row + 1) // ratio
         scores[row, visible:] = -torch.inf
@@ -419,6 +426,7 @@ def test_qli_candidate_vector_repeats(queries, context, ratio, mode, topk):
             blocks = candidate_output.cpu().reshape(queries, -1)[row]
             assert ((blocks == -1) | (blocks >= 0)).all()
             blocks = blocks[blocks >= 0].long()
+            assert candidate_lengths[row] == blocks.numel()
             expected_blocks = (visible + 7) // 8
             assert blocks.unique().numel() == min(expected_blocks, 2048)
             assert ((blocks >= 0) & (blocks < expected_blocks)).all()
@@ -436,6 +444,59 @@ def test_qli_candidate_vector_repeats(queries, context, ratio, mode, topk):
 def test_qli_adaptive_topk_boundaries(topk, ratio, mode):
     """Exercise partial 64-element widths and the unchanged maximum width."""
     test_qli_candidate_vector_repeats(queries=5, context=8192, ratio=ratio, mode=mode, topk=topk)
+
+
+@pytest.mark.skipif(
+    get_ascend_device_type() != AscendDeviceType.A3,
+    reason="reproduces the CANN 9.2.1 A3 prefill causal-loop hang",
+)
+@torch.inference_mode()
+def test_qli_prefill_causal_loop_bounds():
+    """Exercise the two-sequence prefill geometry that previously hung.
+
+    Uniform positive scores make any unique, causally visible Top-K valid.
+    The reference-score tests above cover numerical selection separately.
+    """
+    queries_per_sequence, heads, width, page = 1024, 32, 128, 64
+    lengths_cpu = torch.tensor([2048, 2560], dtype=torch.int32)
+    queries, blocks, topk = 2 * queries_per_sequence, 2560 // page, 512
+    query = torch.ones((queries, heads, width), dtype=torch.int8, device="npu")
+    key = torch.empty_strided((blocks, page, 1, width), (131072, 128, 128, 1), dtype=torch.int8, device="npu")
+    key.fill_(1)
+    key_scale = torch.empty_strided((blocks, page, 1), (65536, 1, 1), dtype=torch.float16, device="npu")
+    key_scale.fill_(1)
+    weights = torch.ones((queries, heads), dtype=torch.float16, device="npu")
+    common = dict(
+        cu_seqlens_q=torch.tensor([0, 1024, 2048], dtype=torch.int32, device="npu"),
+        seqused_k=lengths_cpu.npu(),
+        cmp_residual_k=torch.zeros(2, dtype=torch.int32, device="npu"),
+        max_seqlen_q=queries_per_sequence,
+        layout_q="TND",
+        layout_k="PA_BBND",
+        mask_mode=3,
+        cmp_ratio=2,
+    )
+    metadata = torch.ops._C_ascend.npu_quant_lightning_indexer_v2_metadata(
+        heads, 1, width, topk, 2, batch_size=2, max_seqlen_k=2560, device=str(query.device), **common
+    )
+    selected, _, candidates, candidate_lengths = torch.ops._C_ascend.npu_quant_lightning_indexer_v3(
+        query,
+        key,
+        weights,
+        weights,
+        key_scale,
+        topk,
+        2,
+        block_table=torch.arange(blocks, dtype=torch.int32, device="npu").repeat(2, 1),
+        metadata=metadata,
+        candidate_mode=3,
+        **common,
+    )
+    selected = selected.cpu().reshape(2, queries_per_sequence, topk).long()
+    visible = (lengths_cpu[:, None] * 2 - queries_per_sequence + torch.arange(queries_per_sequence) + 1) // 2
+    assert ((selected >= 0) & (selected < visible[..., None])).all()
+    assert (selected.sort(dim=-1).values.diff(dim=-1) > 0).all()
+    assert candidates.numel() == candidate_lengths.numel() == 0
 
 
 @pytest.mark.parametrize(

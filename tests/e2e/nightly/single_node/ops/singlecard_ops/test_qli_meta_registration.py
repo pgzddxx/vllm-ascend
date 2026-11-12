@@ -38,7 +38,7 @@ def _check_native_dispatch(fake):
     for name, count in (
         ("npu_quant_lightning_indexer_v2", 26),
         ("npu_quant_lightning_indexer_v2_metadata", 23),
-        ("npu_quant_lightning_indexer_v3", 30),
+        ("npu_quant_lightning_indexer_v3", 31),
         ("npu_quant_lightning_indexer_local_candidates", 11),
     ):
         assert len(getattr(ops, name).default._schema.arguments) == count
@@ -97,7 +97,27 @@ def _check_native_dispatch(fake):
                     if fake:
                         assert all(isinstance(output, FakeTensor) for output in outputs)
                     if name.endswith("v3"):
+                        assert len(outputs) == 4
                         assert outputs[2].shape == (0,) and outputs[2].dtype == torch.int32
+                        assert outputs[3].shape == (0,) and outputs[3].dtype == torch.int32
+
+            source_outputs = ops.npu_quant_lightning_indexer_v3(
+                *args,
+                cu_seqlens_q=starts,
+                seqused_k=lengths,
+                block_table=block_table,
+                metadata=metadata,
+                candidate_mode=1,
+                candidate_topk_blocks=64,
+                **dcp_args,
+            )
+            assert len(source_outputs) == 4
+            assert source_outputs[2].shape == (3, 1, 64)
+            assert source_outputs[3].shape == (3, 1)
+            assert all(output.dtype == torch.int32 for output in source_outputs[2:])
+            assert all(output.device.type == device for output in source_outputs)
+            if fake:
+                assert all(isinstance(output, FakeTensor) for output in source_outputs)
 
 
 @pytest.mark.parametrize("mode", ["meta", "fake"])
