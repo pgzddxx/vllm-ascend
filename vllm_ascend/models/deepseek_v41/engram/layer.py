@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
-"""[Role] Project Engram rows and inject gated values into residual streams.
-[Invariants] Rotated checkpoints compute the gate in the original hidden basis.
-[Timeouts & Locks] Current-stream tensor work; no host waits or locks.
-[Side-Effect Policy] Return new hidden states; leave lookup rows/weights intact.
-"""
+"""Engram projection and gate for BF16 and rotated Ascend checkpoints."""
 
 import torch
 from torch import nn
@@ -12,7 +8,6 @@ from vllm.model_executor.layers.linear import ReplicatedLinear
 
 from vllm_ascend.device.hardware_profile import HardwareCapability, get_current_hardware_profile
 from vllm_ascend.ops.triton.engram_gate import fused_engram_gate
-from vllm_ascend.ops.triton.engram_gate_a3 import fused_engram_gate_a3
 
 from .common import engram_gate
 
@@ -44,22 +39,12 @@ class AscendEngram(nn.Module):
         rotation: torch.Tensor | None,
     ) -> torch.Tensor:
         kv = self.wkv(rows)
-        if hidden_states.device.type == "npu":
-            profile = get_current_hardware_profile()
-            if rotation is None and profile.supports(HardwareCapability.ENGRAM_UNROTATED_GATE):
-                return fused_engram_gate(hidden_states, kv, self.q_weight, self.k_weight, token_mask, self.eps)
-            # The A3 kernel supports a shared 2D rotation block and contiguous
-            # channels. Preserve the unfused path for other supported layouts.
-            if (
-                rotation is not None
-                and profile.supports(HardwareCapability.ENGRAM_ROTATED_GATE)
-                and rotation.ndim == 2
-                and hidden_states.stride(-1) == 1
-                and kv.stride(-1) == 1
-            ):
-                return fused_engram_gate_a3(
-                    hidden_states, kv, self.q_weight, self.k_weight, rotation, token_mask, self.eps
-                )
+        if (
+            rotation is None
+            and hidden_states.device.type == "npu"
+            and get_current_hardware_profile().supports(HardwareCapability.ENGRAM_UNROTATED_GATE)
+        ):
+            return fused_engram_gate(hidden_states, kv, self.q_weight, self.k_weight, token_mask, self.eps)
         key, value = kv.split([self.hc_mult * self.dim, self.dim], -1)
         return engram_gate(
             hidden_states,
