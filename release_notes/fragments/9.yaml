@@ -1,0 +1,10 @@
+pr: 9
+entries:
+  - category: feature
+    text: >-
+      Added an experimental opt-in A3 DeepSeek V4.1 adapter for MegaMoe fusion
+      of W4A8 routed experts with a W8A8 shared expert. Requires an operator
+      package with independent shared INT8 descriptors; hardware validation
+      is pending.
+    model: deepseek-v4.1
+    hardware: [A3]
