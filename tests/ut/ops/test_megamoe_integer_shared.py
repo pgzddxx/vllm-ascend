@@ -6,6 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 import torch
+from vllm.config import VllmConfig, set_current_vllm_config
 from vllm.model_executor.layers.activation import SiluAndMulWithClamp
 
 from vllm_ascend.ascend_forward_context import MoECommType
@@ -17,6 +18,12 @@ from vllm_ascend.ops.fused_moe.moe_comm_method import FusedMC2CommImpl
 from vllm_ascend.ops.fused_moe.shared_experts import AscendSharedExperts
 from vllm_ascend.quantization.methods.w8a8.w8a8_dynamic import AscendW8A8DynamicLinearMethod
 from vllm_ascend.quantization.quant_type import QuantType
+
+
+@pytest.fixture(autouse=True)
+def default_vllm_config():
+    with set_current_vllm_config(VllmConfig()):
+        yield
 
 
 def _linear(shape):
