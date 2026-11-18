@@ -26,6 +26,8 @@ class TestMoECommMethod(TestBase):
         self.mock_ascend_config = MagicMock()
         self.mock_ascend_config.ascend_fusion_config.fusion_ops_gmmswigluquant = False
         self.mock_ascend_config.enable_fused_mc2 = False
+        # An unset MagicMock attribute is truthy; shared fusion is disabled here.
+        self.mock_ascend_config.megamoe_shared_expert_fusion = False
         self.mock_ascend_config.mega_moe_max_tokens = 65536
         self.mock_ascend_config.scheduler_config.recompute_scheduler_enable = False
         self._patch_get_ascend_config = patch(
