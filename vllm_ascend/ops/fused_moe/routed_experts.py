@@ -139,6 +139,14 @@ class AscendUnquantizedFusedMoEMethod(UnquantizedFusedMoEMethod):
                     del layer.w2_weight
                     torch.npu.empty_cache()
         else:
+            # CANN 9.2.1 requires fresh ND storage for loaded BF16 MoE weights.
+            # This copy is performed once during loading, before NZ conversion.
+            if get_ascend_config().weight_nz_mode == 2:
+                for parameter in (layer.w13_weight, layer.w2_weight):
+                    if parameter.dtype == torch.bfloat16:
+                        packed = torch.empty(tuple(parameter.shape), dtype=parameter.dtype, device=parameter.device)
+                        packed.copy_(parameter.data)
+                        parameter.data = packed
             layer.w13_weight.data = maybe_trans_nz(layer.w13_weight.data)
             layer.w2_weight.data = maybe_trans_nz(layer.w2_weight.data)
 
