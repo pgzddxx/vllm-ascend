@@ -465,10 +465,16 @@ class WeightSwitchMixin:
             full_shape_list = list(local_tensor.shape)
             full_shape_list[dim] *= config.world_size
             full_shape = tuple(full_shape_list)
+            # Collective buffers use ND; retain the original NZ local weight.
+            import torch_npu
+
+            gather_source = local_tensor
+            if local_tensor.device.type == "npu" and torch_npu.get_npu_format(local_tensor) == 29:
+                gather_source = torch_npu.npu_format_cast(local_tensor, 2)
             if dim == 0:
-                gather_input = local_tensor
+                gather_input = gather_source
             else:
-                gather_input = torch.movedim(local_tensor, dim, 0).contiguous()
+                gather_input = torch.movedim(gather_source, dim, 0).contiguous()
             gather_shape = (full_shape[dim], *full_shape[:dim], *full_shape[dim + 1 :])
             pool_key = (
                 pool_key_prefix,
