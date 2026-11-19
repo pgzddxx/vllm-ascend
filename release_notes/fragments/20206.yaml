@@ -1,0 +1,6 @@
+pr: 20206
+entries:
+  - category: performance
+    text: Added experimental opt-in metadata overlap for DeepSeek V4.1 on A3 Model Runner V2. The option can be enabled with any KV transfer role and with prefill context parallelism.
+    model: deepseek-v4.1
+    hardware: [A3]
